@@ -299,7 +299,7 @@ func handle(gc githubClient, kc corev1.ConfigMapsGetter, defaultNamespace string
 			cm.Namespace = defaultNamespace
 		}
 		logger := log.WithFields(logrus.Fields{"configmap": map[string]string{"name": cm.Name, "namespace": cm.Namespace}})
-		if err := Update(&gitHubFileGetter{org: org, repo: repo, commit: *pr.MergeSHA, client: gc}, kc.ConfigMaps(cm.Namespace), cm.Name, cm.Namespace, data, metrics, logger); err != nil {
+		if err := Update(&osFileGetter{org: org, repo: repo, commit: *pr.MergeSHA, client: gc}, kc.ConfigMaps(cm.Namespace), cm.Name, cm.Namespace, data, metrics, logger); err != nil {
 			return err
 		}
 		updated = append(updated, message(cm.Name, cm.Namespace, data, indent))
