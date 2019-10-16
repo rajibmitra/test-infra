@@ -250,7 +250,88 @@ func FilterChanges(cfg plugins.ConfigUpdater, changes []github.PullRequestChange
 }
 
 func handle(gc githubClient, kc corev1.ConfigMapsGetter, defaultNamespace string, log *logrus.Entry, pre github.PullRequestEvent, config plugins.ConfigUpdater, metrics *prometheus.GaugeVec) error {
-	// Only consider newly merged PRs
+	// Only consider newly merged PRs and Clone 
+		r, err := s.gc.Clone(org + "/" + repo)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := r.Clean(); err != nil {
+			s.log.WithError(err).WithFields(l.Data).Error("Error cleaning up repo.")
+		}
+	}()
+	if err := r.Checkout(targetBranch); err != nil {
+		resp := fmt.Sprintf("cannot checkout %s: %v", targetBranch, err)
+		s.log.WithFields(l.Data).Info(resp)
+		return s.createComment(org, repo, num, comment, resp)
+	}
+	s.log.WithFields(l.Data).WithField("duration", time.Since(startClone)).Info("Cloned and checked out target branch.")
+
+	// Fetch the patch from GitHub
+	localPath, err := s.getPatch(org, repo, targetBranch, num)
+	if err != nil {
+		return err
+	}
+
+	if err := r.Config("user.name", s.botName); err != nil {
+		return err
+	}
+	email := s.email
+	if email == "" {
+		email = fmt.Sprintf("%s@localhost", s.botName)
+	}
+	if err := r.Config("user.email", email); err != nil {
+		return err
+	}
+
+	// New branch for the cherry-pick.
+	newBranch := fmt.Sprintf(cherryPickBranchFmt, num, targetBranch)
+
+	// Check if that branch already exists, which means there is already a PR for that cherry-pick.
+	if r.BranchExists(newBranch) {
+		// Find the PR and link to it.
+		prs, err := s.ghc.GetPullRequests(org, repo)
+		if err != nil {
+			return err
+		}
+		for _, pr := range prs {
+			if pr.Head.Ref == fmt.Sprintf("%s:%s", s.botName, newBranch) {
+				resp := fmt.Sprintf("Looks like #%d has already been cherry picked in %s", num, pr.HTMLURL)
+				s.log.WithFields(l.Data).Info(resp)
+				return s.createComment(org, repo, num, comment, resp)
+			}
+		}
+	}
+
+	// Create the branch for the cherry-pick.
+	if err := r.CheckoutNewBranch(newBranch); err != nil {
+		return err
+	}
+
+	// Apply the patch.
+	if err := r.Am(localPath); err != nil {
+		resp := fmt.Sprintf("#%d failed to apply on top of branch %q:\n```%v\n```", num, targetBranch, err)
+		s.log.WithFields(l.Data).Info(resp)
+		return s.createComment(org, repo, num, comment, resp)
+	}
+
+	push := r.Push
+	if s.push != nil {
+		push = s.push
+	}
+	// Push the new branch in the bot's fork.
+	if err := push(repo, newBranch); err != nil {
+		resp := fmt.Sprintf("failed to push cherry-picked changes in GitHub: %v", err)
+		s.log.WithFields(l.Data).Info(resp)
+		return s.createComment(org, repo, num, comment, resp)
+	}
+	
+	
+	
+	
+	
+	//
+	
 	if pre.Action != github.PullRequestActionClosed {
 		return nil
 	}
