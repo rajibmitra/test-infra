@@ -78,14 +78,22 @@ type FileGetter interface {
 	GetFile(filename string) ([]byte, error)
 }
 
-type gitHubFileGetter struct {
-	org, repo, commit string
-	client            githubClient
-}
+// type gitHubFileGetter struct {
+// 	org, repo, commit string
+// 	client            githubClient
+// }
 
-func (g *gitHubFileGetter) GetFile(filename string) ([]byte, error) {
-	return g.client.GetFile(g.org, g.repo, filename, g.commit)
-}
+// func (g *gitHubFileGetter) GetFile(filename string) ([]byte, error) {
+// 	return g.client.GetFile(g.org, g.repo, filename, g.commit)
+// }
+
+ type osFileGetter struct { 
+ 	root string 
+ } 
+  
+ func (g *osFileGetter) GetFile(filename string) ([]byte, error) { 
+ 	return ioutil.ReadFile(filepath.Join(g.root, filename)) 
+ } 
 
 // Update updates the configmap with the data from the identified files
 func Update(fg FileGetter, kc corev1.ConfigMapInterface, name, namespace string, updates []ConfigMapUpdate, metrics *prometheus.GaugeVec, logger *logrus.Entry) error {
